@@ -16,6 +16,14 @@
   </div>
 </header>
 
+<div class="alert" id="alert" hidden>
+  <div class="alert-body">
+    <strong id="alert-title">⚠️ Bot indisponible</strong>
+    <p id="alert-text" class="muted"></p>
+  </div>
+  <button class="btn btn-danger" id="restart-bot">Relancer la connexion</button>
+</div>
+
 <section class="card altar">
   <div class="altar-head">
     <h2>⛧ Zone démoniaque ⛧</h2>
@@ -72,7 +80,19 @@
     <button class="btn" id="save-guild">Définir</button>
     <button class="btn btn-ghost" id="sync-commands">Synchroniser les commandes</button>
   </div>
-  <p class="muted" id="guild-list"></p>
+  <div class="muted" id="guild-list"></div>
+</section>
+
+<section class="card">
+  <h2>🩺 Diagnostic</h2>
+  <div class="diag">
+    <div><span class="diag-key">token</span><span class="diag-val" id="diag-token">—</span></div>
+    <div><span class="diag-key">connexion</span><span class="diag-val" id="diag-ready">—</span></div>
+    <div><span class="diag-key">tentatives</span><span class="diag-val" id="diag-attempts">0</span></div>
+    <div><span class="diag-key">serveurs vus</span><span class="diag-val" id="diag-guilds">0</span></div>
+    <div><span class="diag-key">cible résolue</span><span class="diag-val" id="diag-target">—</span></div>
+    <div class="wide"><span class="diag-key">dernière erreur</span><span class="diag-val" id="diag-error">aucune</span></div>
+  </div>
 </section>
 
 <section class="card">

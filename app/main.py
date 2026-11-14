@@ -225,10 +225,22 @@ async def api_destroy(request: Request) -> JSONResponse:
         raise HTTPException(status_code=400, detail="Mode inconnu")
     guild = bot_module._target_guild()
     if guild is None:
-        raise HTTPException(
-            status_code=400,
-            detail="Aucune guilde cible disponible (bot hors ligne ou identifiant non défini)",
-        )
+        info = bot_module.guild_info()
+        diag = info["diagnostics"]
+        if not diag["token_present"]:
+            detail = "DISCORD_TOKEN absent : renseigne la variable d'environnement sur Render puis relance la connexion"
+        elif diag["last_error"]:
+            detail = f"bot hors ligne ({diag['last_error']}) : vérifie le token et les intents, puis relance la connexion"
+        elif diag["guild_id_set"]:
+            detail = (
+                "le bot est connecté mais absent de ce serveur : invite-le avec "
+                "le scope applications.commands + Administrateur, ou corrige l'identifiant"
+            )
+        elif diag["guild_count"] > 1:
+            detail = "plusieurs serveurs visibles : définis l'identifiant de la cible"
+        else:
+            detail = "aucun serveur cible : invite le bot sur un serveur puis définis l'identifiant"
+        raise HTTPException(status_code=400, detail=detail)
     if not destroyer.start(guild, preset, mode):
         raise HTTPException(status_code=409, detail="Destruction déjà en cours")
     return JSONResponse({"ok": True, "mode": mode})
@@ -238,6 +250,13 @@ async def api_destroy(request: Request) -> JSONResponse:
 async def api_stop(request: Request) -> JSONResponse:
     require_api(request)
     return JSONResponse({"ok": destroyer.stop()})
+
+
+@app.post("/api/bot/restart")
+async def api_bot_restart(request: Request) -> JSONResponse:
+    require_api(request)
+    message = await bot_module.restart()
+    return JSONResponse({"ok": True, "message": message})
 
 
 @app.post("/api/logs/clear")

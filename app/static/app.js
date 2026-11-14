@@ -198,6 +198,16 @@ $("clear-logs").addEventListener("click", async () => {
   refresh();
 });
 
+$("restart-bot").addEventListener("click", async () => {
+  try {
+    const data = await api("/api/bot/restart", {});
+    if (data) toast(data.message);
+  } catch (err) {
+    toast(err.message, true);
+  }
+  refresh();
+});
+
 /* ---------- rendu ---------- */
 const LABELS = {
   serveur_renomme: "serveur renommé",
@@ -249,9 +259,55 @@ function renderState(state) {
       ? `connecté en ${bot.user} — aucun serveur cible`
       : "bot non connecté — en attente du token";
 
-  $("guild-list").textContent = state.guilds.length
-    ? "Serveurs disponibles : " + state.guilds.map((g) => `${g.name} (${g.id})`).join(", ")
-    : "Aucun serveur visible. Invite le bot puis synchronise les commandes.";
+  const guildList = $("guild-list");
+  guildList.textContent = "";
+  if (state.guilds.length) {
+    guildList.append("Serveurs visibles : ");
+    state.guilds.forEach((g) => {
+      const chip = document.createElement("button");
+      chip.className = "guild-chip";
+      chip.textContent = `${g.name} (${g.id})`;
+      chip.addEventListener("click", () => {
+        $("guild-id").value = g.id;
+        toast("identifiant prérempli — clique sur Définir");
+      });
+      guildList.appendChild(chip);
+    });
+  } else {
+    guildList.textContent = "Aucun serveur visible par le bot.";
+  }
+
+  const diag = bot.diagnostics || {};
+  $("diag-token").textContent = diag.token_present ? "présent" : "absent";
+  $("diag-token").className = "diag-val " + (diag.token_present ? "good" : "bad");
+  $("diag-ready").textContent = bot.ready ? "connecté" : "hors ligne";
+  $("diag-ready").className = "diag-val " + (bot.ready ? "good" : "bad");
+  $("diag-attempts").textContent = diag.attempts ?? 0;
+  $("diag-guilds").textContent = diag.guild_count ?? 0;
+  $("diag-target").textContent = diag.target_found ? "oui" : "non";
+  $("diag-target").className = "diag-val " + (diag.target_found ? "good" : "bad");
+  $("diag-error").textContent = diag.last_error || "aucune";
+
+  const alert = $("alert");
+  let alertText = "";
+  if (!diag.token_present) {
+    alertText =
+      "DISCORD_TOKEN absent. Ajoute la variable d'environnement sur Render, redéploie, puis relance la connexion.";
+  } else if (diag.last_error) {
+    alertText =
+      "Connexion Discord échouée : " + diag.last_error + ". Vérifie le token et les intents privilégiés (SERVER MEMBERS + MESSAGE CONTENT).";
+  } else if (!bot.ready) {
+    alertText = "Bot en cours de connexion…";
+  } else if (diag.guild_id_set && !diag.target_found) {
+    alertText =
+      "Le bot est connecté mais absent de ce serveur. Invite-le (applications.commands + Administrateur) ou corrige l'identifiant.";
+  } else if (!diag.target_found && diag.guild_count > 1) {
+    alertText = "Plusieurs serveurs visibles : choisis la cible ci-dessous.";
+  } else if (!diag.target_found) {
+    alertText = "Aucun serveur cible : invite le bot sur un serveur.";
+  }
+  alert.hidden = alertText === "";
+  if (alertText) $("alert-text").textContent = alertText;
 
   const d = state.destruction;
   $("progress-bar").style.width = d.percent + "%";

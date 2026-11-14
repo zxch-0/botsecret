@@ -59,6 +59,21 @@ Toutes sont muettes sans le code secret.
 | `/stats` | Statistiques | Panneau de contrôle |
 | `/aide` | Aide générique | Mode Confinement |
 
+## Diagnostic
+
+Si le dashboard affiche « aucune guilde cible disponible », ouvre la carte **Diagnostic** :
+
+| Cause | Correction |
+| --- | --- |
+| token absent | ajoute `DISCORD_TOKEN` sur Render puis redéploie |
+| token invalide | régénère-le dans le Developer Portal > Bot > Reset Token |
+| intents privilégiés désactivés | active **SERVER MEMBERS INTENT** et **MESSAGE CONTENT INTENT** |
+| bot absent du serveur | invite-le avec `applications.commands` + `Administrateur` |
+
+Le bouton **Relancer la connexion** force une reconnexion immédiate, et la liste des
+serveurs visibles permet de définir la cible en un clic. Si aucun identifiant n'est
+défini et que le bot ne voit qu'un seul serveur, il le prend automatiquement.
+
 ## Notes
 
 - Le plan gratuit Render met le service en veille : utilisez un pinger externe sur `/healthz`.
