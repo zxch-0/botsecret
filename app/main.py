@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import hmac
 import logging
 import secrets
@@ -37,13 +36,11 @@ async def lifespan(app: FastAPI):
         )
     if not config.DISCORD_TOKEN:
         log.warning("DISCORD_TOKEN absent : le bot ne se connectera pas")
-    task = asyncio.create_task(bot_module.start_bot())
+    bot_module.start_bot()
     try:
         yield
     finally:
         await bot_module.shutdown()
-        task.cancel()
-        await asyncio.gather(task, return_exceptions=True)
 
 
 app = FastAPI(title="botsecret", lifespan=lifespan, docs_url=None, redoc_url=None)
@@ -79,7 +76,9 @@ async def healthz() -> JSONResponse:
 async def login_page(request: Request):
     if is_authed(request):
         return RedirectResponse("/", status_code=303)
-    return templates.TemplateResponse(request, "login.html", {"error": None})
+    return templates.TemplateResponse(
+        request=request, name="login.html", context={"error": None}
+    )
 
 
 @app.post("/login", response_class=HTMLResponse)
@@ -91,7 +90,10 @@ async def login_submit(
         request.session["auth"] = True
         return RedirectResponse("/", status_code=303)
     return templates.TemplateResponse(
-        request, "login.html", {"error": "Mot de passe incorrect."}, status_code=401
+        request=request,
+        name="login.html",
+        context={"error": "Mot de passe incorrect."},
+        status_code=401,
     )
 
 
@@ -106,9 +108,9 @@ async def dashboard(request: Request):
     if not is_authed(request):
         return RedirectResponse("/login", status_code=303)
     return templates.TemplateResponse(
-        request,
-        "dashboard.html",
-        {
+        request=request,
+        name="dashboard.html",
+        context={
             "secret_code": db.get_secret_code(),
             "guild_id": db.get_guild_id() or "",
             "preset": db.get_preset(),
