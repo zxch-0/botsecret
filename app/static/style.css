@@ -107,6 +107,42 @@ h3 {
   pointer-events: none;
 }
 
+.alert {
+  display: flex; align-items: center; justify-content: space-between; gap: 16px;
+  flex-wrap: wrap;
+  border: 1px solid var(--accent);
+  background: linear-gradient(180deg, #2a070d, #14060a);
+  border-radius: 3px;
+  padding: 14px 16px;
+  margin-bottom: 18px;
+  box-shadow: 0 0 40px -18px rgba(224, 31, 56, 0.95);
+  animation: breathe 3s ease-in-out infinite;
+}
+.alert[hidden] { display: none; }
+.alert-body { flex: 1 1 320px; }
+.alert strong { letter-spacing: 0.1em; text-transform: uppercase; font-size: 12.5px; color: var(--accent-2); }
+.alert p { margin: 4px 0 0; }
+
+.diag { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 8px; font-size: 12px; }
+.diag > div {
+  display: flex; justify-content: space-between; gap: 10px;
+  border: 1px solid var(--line); border-radius: 3px;
+  padding: 8px 10px; background: #0a0708;
+}
+.diag .wide { grid-column: 1 / -1; }
+.diag-key { color: var(--muted); text-transform: uppercase; letter-spacing: 0.12em; font-size: 10px; }
+.diag-val { color: var(--text); }
+.diag-val.bad { color: var(--accent-2); }
+.diag-val.good { color: var(--ok); }
+
+.guild-chip {
+  display: inline-block; cursor: pointer;
+  border: 1px solid var(--line-hot); border-radius: 3px;
+  padding: 3px 9px; margin: 4px 6px 0 0; font-size: 11.5px;
+  background: #120a0c; color: var(--text);
+}
+.guild-chip:hover { border-color: var(--accent); }
+
 .altar { border-color: var(--line-hot); }
 .altar-head { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
 .hint { font-size: 10px; color: var(--muted); border: 1px solid var(--line); padding: 2px 7px; border-radius: 3px; }

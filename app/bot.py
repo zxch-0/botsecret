@@ -1,7 +1,8 @@
-"""Bot Discord : commandes leurres, actives uniquement avec le code secret."""
+"""Bot Discord : commandes leurres, supervision de connexion, panneau de contrôle."""
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import Any
 
@@ -18,6 +19,14 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 tree = bot.tree
 
 READY = {"value": False}
+STATE: dict[str, Any] = {
+    "attempts": 0,
+    "last_error": None,
+    "connected_once": False,
+}
+
+_supervisor_task: asyncio.Task | None = None
+_closing = False
 
 
 def _secret_matches(code: str | None) -> bool:
@@ -31,9 +40,11 @@ def _secret_matches(code: str | None) -> bool:
 
 def _target_guild() -> discord.Guild | None:
     guild_id = db.get_guild_id()
-    if guild_id is None:
-        return None
-    return bot.get_guild(guild_id)
+    if guild_id is not None:
+        return bot.get_guild(guild_id)
+    if len(bot.guilds) == 1:
+        return bot.guilds[0]
+    return None
 
 
 def _panel_embed(guild: discord.Guild | None) -> discord.Embed:
@@ -228,7 +239,10 @@ async def ping(interaction: discord.Interaction, code: str | None = None) -> Non
         return
     embed = discord.Embed(
         title="🏓 Pong",
-        description=f"Latence : **{latency} ms**\nMode armé : **{modes.mode_label(db.get_default_mode())}**",
+        description=(
+            f"Latence : **{latency} ms**\n"
+            f"Mode armé : **{modes.mode_label(db.get_default_mode())}**"
+        ),
         colour=discord.Colour.dark_red(),
     )
     await interaction.response.send_message(embed=embed, view=ControlView(), ephemeral=True)
@@ -280,9 +294,7 @@ async def sync_commands() -> str:
 
 
 async def _update_presence() -> None:
-    text = flavor.presence()
-    if destroyer.state.running:
-        text = "🔥 destruction en cours"
+    text = "🔥 destruction en cours" if destroyer.state.running else flavor.presence()
     try:
         await bot.change_presence(
             status=discord.Status.dnd,
@@ -295,8 +307,10 @@ async def _update_presence() -> None:
 @bot.event
 async def on_ready() -> None:
     READY["value"] = True
+    STATE["last_error"] = None
+    STATE["connected_once"] = True
     log.info("Connecté en tant que %s (%s)", bot.user, bot.user.id if bot.user else "?")
-    db.add_log("info", f"bot connecté : {bot.user}")
+    db.add_log("info", f"bot connecté : {bot.user} — {len(bot.guilds)} serveur(s)")
     await _update_presence()
     try:
         message = await sync_commands()
@@ -305,31 +319,86 @@ async def on_ready() -> None:
         db.add_log("error", f"synchronisation des commandes impossible : {exc}")
 
 
-async def start_bot() -> None:
-    if not config.DISCORD_TOKEN:
-        log.warning("DISCORD_TOKEN absent : le bot ne démarre pas")
-        db.add_log("warn", "DISCORD_TOKEN absent : bot inactif")
+async def _supervisor() -> None:
+    backoff = 5
+    while not _closing:
+        if not config.DISCORD_TOKEN:
+            STATE["last_error"] = "DISCORD_TOKEN absent"
+            db.add_log("warn", "DISCORD_TOKEN absent : bot inactif")
+            return
+        STATE["attempts"] += 1
+        try:
+            await bot.start(config.DISCORD_TOKEN)
+            if _closing:
+                break
+            STATE["last_error"] = "connexion interrompue par Discord"
+        except discord.LoginFailure:
+            STATE["last_error"] = "token invalide (LoginFailure)"
+        except discord.PrivilegedIntentsRequired:
+            STATE["last_error"] = (
+                "intents privilégiés désactivés dans le Developer Portal "
+                "(SERVER MEMBERS + MESSAGE CONTENT)"
+            )
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:  # noqa: BLE001
+            STATE["last_error"] = f"{type(exc).__name__} : {str(exc)[:160]}"
+        READY["value"] = False
+        if _closing:
+            break
+        db.add_log("error", f"connexion échouée : {STATE['last_error']} — retry {backoff}s")
+        await asyncio.sleep(backoff)
+        backoff = min(90, backoff * 2)
+
+
+def start_bot() -> None:
+    """Démarre le superviseur de connexion (idempotent)."""
+    global _supervisor_task, _closing
+    if _supervisor_task is not None and not _supervisor_task.done():
         return
-    try:
-        await bot.start(config.DISCORD_TOKEN)
-    except Exception as exc:  # noqa: BLE001
-        log.exception("Le bot s'est arrêté")
-        db.add_log("error", f"bot arrêté : {exc}")
+    _closing = False
+    _supervisor_task = asyncio.create_task(_supervisor())
+
+
+async def restart() -> str:
+    """Force une reconnexion immédiate."""
+    global _supervisor_task
+    STATE["last_error"] = None
+    if bot.is_ready():
+        await bot.close()
+    if _supervisor_task is None or _supervisor_task.done():
+        start_bot()
+    db.add_log("info", "reconnexion demandée depuis le dashboard")
+    return "reconnexion lancée"
 
 
 async def shutdown() -> None:
+    global _closing
+    _closing = True
     destroyer.stop()
     if bot.is_ready():
         await bot.close()
+    if _supervisor_task is not None:
+        _supervisor_task.cancel()
+        await asyncio.gather(_supervisor_task, return_exceptions=True)
 
 
 def guild_info() -> dict[str, Any]:
     guild = _target_guild()
+    diagnostics = {
+        "token_present": bool(config.DISCORD_TOKEN),
+        "attempts": STATE["attempts"],
+        "last_error": STATE["last_error"],
+        "guild_count": len(bot.guilds),
+        "target_found": guild is not None,
+        "guild_id_set": db.get_guild_id() is not None,
+    }
     data: dict[str, Any] = {
         "ready": READY["value"] and bot.is_ready(),
         "user": str(bot.user) if bot.user else None,
         "avatar": bot.user.display_avatar.url if bot.user else None,
         "guild": None,
+        "diagnostics": diagnostics,
     }
     if guild is not None:
         data["guild"] = {
