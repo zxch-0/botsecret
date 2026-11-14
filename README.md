@@ -67,6 +67,7 @@ Si le dashboard affiche « aucune guilde cible disponible », ouvre la carte **D
 | --- | --- |
 | token absent | ajoute `DISCORD_TOKEN` sur Render puis redéploie |
 | token invalide | régénère-le dans le Developer Portal > Bot > Reset Token |
+| `Session is closed` | déjà corrigé : un client Discord neuf est créé à chaque tentative |
 | intents privilégiés désactivés | active **SERVER MEMBERS INTENT** et **MESSAGE CONTENT INTENT** |
 | bot absent du serveur | invite-le avec `applications.commands` + `Administrateur` |
 
